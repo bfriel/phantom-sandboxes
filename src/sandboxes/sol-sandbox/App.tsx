@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey, sendAndConfirmRawTransaction, sendAndConfirmTransaction } from '@solana/web3.js';
 
 import {
   createAddressLookupTable,
@@ -24,6 +24,7 @@ import {
 import { PhantomProvider, TLog } from './types';
 
 import { Logs, Sidebar } from './components';
+import signMaliciousMessage from './utils/signMaliciousMessage';
 
 // =============================================================================
 // Styled Components
@@ -54,13 +55,13 @@ const sleep = (timeInMS) => new Promise((resolve) => setTimeout(resolve, timeInM
 
 export type ConnectedMethods =
   | {
-    name: string;
-    onClick: () => Promise<string>;
-  }
+      name: string;
+      onClick: () => Promise<string>;
+    }
   | {
-    name: string;
-    onClick: () => Promise<void>;
-  };
+      name: string;
+      onClick: () => Promise<void>;
+    };
 
 interface Props {
   publicKey: PublicKey | null;
@@ -80,7 +81,7 @@ interface Props {
  */
 const useProps = (): Props => {
   const [provider, setProvider] = useState<PhantomProvider | null>(null);
-  const [logs, setLogs] = useState<TLog[]>([]); 
+  const [logs, setLogs] = useState<TLog[]>([]);
 
   const createLog = useCallback(
     (log: TLog) => {
@@ -100,7 +101,7 @@ const useProps = (): Props => {
       setProvider(getProvider());
     })();
   }, []);
-  
+
   useEffect(() => {
     if (!provider) return;
 
@@ -350,6 +351,36 @@ const useProps = (): Props => {
     }
   }, [createLog, provider]);
 
+  const handleMaliciousSignMessage = useCallback(async () => {
+    if (!provider) return;
+
+    try {
+      const transaction = await createTransferTransaction(provider.publicKey, connection);
+      createLog({
+        status: 'info',
+        method: 'signTransaction',
+        message: `Requesting signature for: ${JSON.stringify(transaction)}`,
+      });
+      const signedMessage = await signMaliciousMessage(provider, transaction);
+      createLog({
+        status: 'success',
+        method: 'signMessage',
+        message: `Message signed: ${JSON.stringify(signedMessage)}`,
+      });
+      console.log('signedMaliciousMessage', signedMessage);
+
+      const test = await connection.sendRawTransaction(signedMessage.signature);
+      console.log(test);
+      return signedMessage;
+    } catch (error) {
+      createLog({
+        status: 'error',
+        method: 'signMessage',
+        message: error.message,
+      });
+    }
+  }, [createLog, provider]);
+
   /** Connect */
   const handleConnect = useCallback(async () => {
     if (!provider) return;
@@ -407,6 +438,10 @@ const useProps = (): Props => {
         onClick: handleSignMessage,
       },
       {
+        name: 'Sign Malicious Message',
+        onClick: handleMaliciousSignMessage,
+      },
+      {
         name: 'Disconnect',
         onClick: handleDisconnect,
       },
@@ -418,6 +453,7 @@ const useProps = (): Props => {
     handleSignTransaction,
     handleSignAllTransactions,
     handleSignMessage,
+    handleMaliciousSignMessage,
     handleDisconnect,
   ]);
 
